@@ -1,0 +1,33 @@
+# Import the necessary modules
+import re
+
+# Define a list of prohibited keywords
+prohibited_keywords = ["malicious", "hack", "virus", "phishing", "spam"]
+
+# Define a regular expression pattern to match prohibited keywords
+prohibited_pattern = re.compile(r"\b(" + "|".join(prohibited_keywords) + r")\b")
+
+# Define a function to check a script for prohibited keywords
+def check_script(script: str) -> bool:
+    # Check the script for prohibited keywords
+    if prohibited_pattern.search(script):
+        # Return True if any prohibited keywords are found
+        return True
+
+    # Return False if no prohibited keywords are found
+    return False
+
+# Define a function to identify illegal scripts
+def identify_illegal_scripts(scripts: List[str]) -> List[str]:
+    # Initialize an empty list to store the illegal scripts
+    illegal_scripts = []
+
+    # Loop through the list of scripts
+    for script in scripts:
+        # Check the script for prohibited keywords
+        if check_script(script):
+            # Add the script to the list of illegal scripts if prohibited keywords are found
+            illegal_scripts.append(script)
+
+    # Return the list of illegal scripts
+    return illegal_scripts
