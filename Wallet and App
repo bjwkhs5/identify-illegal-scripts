@@ -1,0 +1,155 @@
+import os
+import json
+import hashlib
+from flask import Flask, request, jsonify
+from ecdsa import SigningKey, VerifyingKey, SECP256k1
+
+# Wallet Class
+class Wallet:
+    def __init__(self):
+        self.private_key = SigningKey.generate(curve=SECP256k1)
+        self.public_key = self.private_key.verifying_key
+
+    def get_address(self):
+        """Generate wallet address from public key."""
+        pub_key_bytes = self.public_key.to_string()
+        return hashlib.sha256(pub_key_bytes).hexdigest()
+
+    def sign_transaction(self, transaction):
+        """Sign a transaction with the private key."""
+        transaction_string = json.dumps(transaction, sort_keys=True).encode()
+        signature = self.private_key.sign(transaction_string)
+        return signature.hex()
+
+    @staticmethod
+    def verify_transaction(transaction, signature, public_key_hex):
+        """Verify a transaction's signature."""
+        transaction_string = json.dumps(transaction, sort_keys=True).encode()
+        public_key_bytes = bytes.fromhex(public_key_hex)
+        public_key = VerifyingKey.from_string(public_key_bytes, curve=SECP256k1)
+        try:
+            return public_key.verify(bytes.fromhex(signature), transaction_string)
+        except:
+            return False
+
+# Blockchain (Simple Implementation)
+class Blockchain:
+    def __init__(self):
+        self.chain = []
+        self.pending_transactions = []
+        self.wallets = {}  # Keeps track of balances for simplicity
+        self.create_genesis_block()
+
+    def create_genesis_block(self):
+        genesis_block = {
+            "index": 0,
+            "transactions": [],
+            "previous_hash": "0",
+            "nonce": 0
+        }
+        genesis_block["hash"] = self.compute_hash(genesis_block)
+        self.chain.append(genesis_block)
+
+    def compute_hash(self, block):
+        block_string = json.dumps(block, sort_keys=True)
+        return hashlib.sha256(block_string.encode()).hexdigest()
+
+    def add_transaction(self, sender, recipient, amount, signature):
+        """Add a new transaction to the pending transactions."""
+        if sender != "network" and not self.validate_transaction(sender, recipient, amount):
+            return False
+        transaction = {
+            "sender": sender,
+            "recipient": recipient,
+            "amount": amount
+        }
+        if sender != "network" and not Wallet.verify_transaction(transaction, signature, sender):
+            return False
+        self.pending_transactions.append(transaction)
+        return True
+
+    def validate_transaction(self, sender, recipient, amount):
+        """Check if the sender has enough balance."""
+        if self.wallets.get(sender, 0) < amount:
+            return False
+        return True
+
+    def mine_block(self, miner_address):
+        """Mine a new block."""
+        if not self.pending_transactions:
+            return None
+        new_block = {
+            "index": len(self.chain),
+            "transactions": self.pending_transactions,
+            "previous_hash": self.chain[-1]["hash"],
+            "nonce": 0
+        }
+        new_block["hash"] = self.compute_hash(new_block)
+        self.chain.append(new_block)
+        self.pending_transactions = [{"sender": "network", "recipient": miner_address, "amount": 50}]
+        self.update_balances()
+        return new_block
+
+    def update_balances(self):
+        """Update balances based on the blockchain."""
+        self.wallets.clear()
+        for block in self.chain:
+            for tx in block["transactions"]:
+                sender = tx["sender"]
+                recipient = tx["recipient"]
+                amount = tx["amount"]
+                if sender != "network":
+                    self.wallets[sender] = self.wallets.get(sender, 0) - amount
+                self.wallets[recipient] = self.wallets.get(recipient, 0) + amount
+
+    def get_balance(self, address):
+        """Get the balance of a wallet."""
+        return self.wallets.get(address, 0)
+
+# Flask App
+app = Flask(__name__)
+blockchain = Blockchain()
+wallets = {}
+
+@app.route("/create_wallet", methods=["POST"])
+def create_wallet():
+    new_wallet = Wallet()
+    address = new_wallet.get_address()
+    wallets[address] = new_wallet
+    return jsonify({"address": address, "public_key": new_wallet.public_key.to_string().hex()})
+
+@app.route("/balance/<address>", methods=["GET"])
+def get_balance(address):
+    balance = blockchain.get_balance(address)
+    return jsonify({"address": address, "balance": balance})
+
+@app.route("/send_transaction", methods=["POST"])
+def send_transaction():
+    data = request.json
+    sender = data["sender"]
+    recipient = data["recipient"]
+    amount = data["amount"]
+    signature = data["signature"]
+
+    if blockchain.add_transaction(sender, recipient, amount, signature):
+        return jsonify({"message": "Transaction added successfully."}), 200
+    else:
+        return jsonify({"message": "Transaction failed. Insufficient funds or invalid signature."}), 400
+
+@app.route("/mine", methods=["POST"])
+def mine():
+    data = request.json
+    miner_address = data["miner_address"]
+    block = blockchain.mine_block(miner_address)
+    if block:
+        return jsonify({"message": "Block mined successfully.", "block": block}), 200
+    else:
+        return jsonify({"message": "No transactions to mine."}), 400
+
+@app.route("/chain", methods=["GET"])
+def get_chain():
+    return jsonify(blockchain.chain)
+
+# Run Flask App
+if __name__ == "__main__":
+    app.run(debug=True)
