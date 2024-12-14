@@ -1,0 +1,22 @@
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+class AIChatbot:
+    def __init__(self, model_name="gpt2"):
+        # Load model and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name)
+
+    def generate_response(self, prompt, max_length=150):
+        # Tokenize input
+        inputs = self.tokenizer.encode(prompt, return_tensors="pt")
+        # Generate response
+        outputs = self.model.generate(inputs, max_length=max_length, num_return_sequences=1)
+        # Decode and return
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# Example usage
+if __name__ == "__main__":
+    ai_bot = AIChatbot()
+    user_input = "Explain quantum physics in simple terms."
+    response = ai_bot.generate_response(user_input)
+    print("AI Response:", response)
